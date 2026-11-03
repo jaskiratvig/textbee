@@ -14,7 +14,7 @@ for (const name of ['free', 'pro']) {
   }, { upsert: true })
 }
 const email = process.env.TARGET_EMAIL
-const r = db.users.updateOne({ email }, { $set: { emailVerificationWaivedAt: new Date() } })
+const r = db.users.updateOne({ email }, { $set: { emailVerificationWaivedAt: new Date(), emailVerifiedAt: new Date() } })
 if (r.matchedCount !== 1) { print('No account found for ' + email + '. Register in the dashboard first.'); quit(1) }
-print('Plans ready; email verification waived for ' + email)
+print('Plans ready; email marked verified for ' + email)
 JS
