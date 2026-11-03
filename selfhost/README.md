@@ -31,7 +31,7 @@ python3 selfhost/setup.py \
 docker compose up -d --build
 
 tailscale serve --bg 3000
-tailscale serve --bg --set-path /api http://127.0.0.1:3001/api
+tailscale serve --bg --set-path /api/v1 http://127.0.0.1:3001/api/v1
 ```
 
 Open your `https://YOUR-COMPUTER.YOUR-TAILNET.ts.net` address, register an account, then run:
