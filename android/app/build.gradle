@@ -57,6 +57,15 @@ android {
             resValue "string", "app_name", "textbee.dev (Dev)"
         }
         
+        selfhost {
+            dimension "environment"
+            applicationId "com.vigestates.sms"
+            def selfhostApiUrl = project.findProperty("SELFHOST_API_BASE_URL") ?: "https://set-SELFHOST_API_BASE_URL.invalid/api/v1/"
+            buildConfigField "String", "API_BASE_URL", "\"${selfhostApiUrl}\""
+            buildConfigField "String", "ENVIRONMENT", '"production"'
+            resValue "string", "app_name", "SMS Gateway (self-hosted)"
+        }
+
         prod {
             dimension "environment"
             applicationId "com.vernu.sms"

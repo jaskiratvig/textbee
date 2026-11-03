@@ -20,6 +20,7 @@ local.properties
 # Firebase configuration files
 /app/src/dev/google-services.json
 /app/src/prod/google-services.json
+/app/src/selfhost/google-services.json
 /app/google-services.json
 # Android Studio drops this file here and it ships inside the APK
 /app/src/main/assets/adi-registration.properties

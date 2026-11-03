@@ -7,3 +7,8 @@
 .omc/
 # Rendered email previews (pnpm preview:emails)
 api/tmp/
+
+# Self-host secrets and contact data
+.env
+selfhost/firebase-service-account.json
+selfhost/data/
