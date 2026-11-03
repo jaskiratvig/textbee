@@ -61,11 +61,11 @@ Install the APK from `android/app/build/outputs/apk/selfhost/release/` on the ph
 
 ## 4. Send
 
-Make a CSV with at least these columns, where `opt_in` records whether that person agreed to texts:
+Make a CSV with a `phone` column. Any other columns can be used in the template:
 
 ```csv
-phone,opt_in,first_name
-3125550100,yes,Sam
+phone,first_name
+3125550100,Sam
 ```
 
 Do a dry run first:

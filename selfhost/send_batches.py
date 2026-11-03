@@ -3,8 +3,8 @@
 
 Dry run by default; nothing is sent without --live.
 
-The CSV needs a `phone` column and an `opt_in` column. Only rows whose opt_in is
-yes/true/1 are sent. Other columns can be used in the template, e.g. {first_name}.
+The CSV needs a `phone` column. Other columns can be used in the template,
+e.g. {first_name}.
 
 Safeguards:
   * skips numbers in the suppression file (your DNC scrub results and opt-outs)
@@ -29,7 +29,6 @@ from zoneinfo import ZoneInfo
 OPT_OUT_WORDS = {"STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "OPTOUT", "REVOKE"}
 OPT_OUT_PHRASES = ("opt out", "remove me", "take me off", "do not text", "don't text",
                    "dont text", "stop texting", "stop messaging", "wrong number")
-TRUTHY = {"yes", "y", "true", "1"}
 
 
 def normalize(raw):
@@ -95,19 +94,16 @@ def fetch_opt_outs(base, key, device):
 
 
 def load_recipients(args, suppressed, already_sent):
-    stats = {"no_opt_in": 0, "invalid": 0, "suppressed": 0, "already_sent": 0, "duplicate": 0}
+    stats = {"invalid": 0, "suppressed": 0, "already_sent": 0, "duplicate": 0}
     recipients, seen = [], set()
     with args.csv.open(newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        missing = {"phone", "opt_in"} - set(reader.fieldnames or [])
-        if missing:
-            sys.exit(f"CSV is missing column(s): {', '.join(sorted(missing))}")
+        if "phone" not in (reader.fieldnames or []):
+            sys.exit("CSV is missing the phone column")
         for row in reader:
             number = normalize(row.get("phone"))
             if number is None:
                 stats["invalid"] += 1
-            elif (row.get("opt_in") or "").strip().lower() not in TRUTHY:
-                stats["no_opt_in"] += 1
             elif number in suppressed:
                 stats["suppressed"] += 1
             elif number in already_sent:
