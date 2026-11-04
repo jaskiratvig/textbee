@@ -108,6 +108,31 @@ def classify_reply(text):
     return "replied"
 
 
+def fix_address(address):
+    """Turn 104Th into 104th."""
+    return re.sub(r"\b(\d+)(St|Nd|Rd|Th)\b", lambda m: m.group(1) + m.group(2).lower(), address)
+
+
+def greeting_name(row, first):
+    """Return the owner's first name, or blank if it looks like an initial or a surname."""
+    if len(first) < 2:
+        return ""
+    for contact in range(1, 9):
+        names = re.findall(r"[a-z'-]+", (row.get(f"Contact{contact}Name") or "").lower())
+        if names and names[0] == first.lower():
+            return first
+    return ""
+
+
+def render(template, first, address):
+    """Fill in a message, leaving the greeting out when there's no usable name."""
+    if not first:
+        template = template.replace("Hi {FirstName}, ", "Hi, ")
+        if template.startswith("{FirstName}, "):
+            template = template[len("{FirstName}, "):]
+    return template.format(FirstName=first, PropertyAddress=fix_address(address))
+
+
 def connect(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path)
@@ -188,7 +213,7 @@ def pick_from_raw(row, litigator_scrubbed, all_numbers=False):
             numbers += [n for n in more if n not in numbers]
     elif numbers:
         numbers = numbers[:1]
-    return (numbers, first, None) if numbers else ([], None, reason)
+    return (numbers, greeting_name(row, first), None) if numbers else ([], None, reason)
 
 
 def cmd_import(args):
@@ -393,8 +418,7 @@ def cmd_run(args):
 
     today = now.date()
     due = select_due(db, args, today)
-    batch = [(c, steps[c["step"]]["template"].format(
-        FirstName=c["first_name"], PropertyAddress=c["property_address"])) for c in due]
+    batch = [(c, render(steps[c["step"]]["template"], c["first_name"], c["property_address"])) for c in due]
     if not batch:
         print("Nothing due right now")
         return
@@ -513,7 +537,7 @@ def cmd_test(args):
         if db.execute("SELECT 1 FROM suppressions WHERE phone=?", (phone,)).fetchone():
             sys.exit(f"{phone} is opted out, so nothing was sent. Clear it first if it's your own test number.")
         for step in steps:
-            messages.append({"message": step["template"].format(FirstName=first, PropertyAddress=address),
+            messages.append({"message": render(step["template"], first, address),
                              "recipients": [phone]})
     try:
         api(args, key, "POST", f"/gateway/devices/{args.device_id}/send-bulk-sms",

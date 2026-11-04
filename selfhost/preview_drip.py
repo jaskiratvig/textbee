@@ -25,6 +25,28 @@ def normalize(raw):
     return "+1" + digits if PHONE_RE.fullmatch(digits) else None
 
 
+def fix_address(address):
+    return re.sub(r"\b(\d+)(St|Nd|Rd|Th)\b", lambda m: m.group(1) + m.group(2).lower(), address)
+
+
+def greeting_name(row, first):
+    if len(first) < 2:
+        return ""
+    for contact in range(1, 9):
+        names = re.findall(r"[a-z'-]+", (row.get(f"Contact{contact}Name") or "").lower())
+        if names and names[0] == first.lower():
+            return first
+    return ""
+
+
+def render(template, first, address):
+    if not first:
+        template = template.replace("Hi {FirstName}, ", "Hi, ")
+        if template.startswith("{FirstName}, "):
+            template = template[len("{FirstName}, "):]
+    return template.format(FirstName=first, PropertyAddress=fix_address(address))
+
+
 def field(row, name):
     return (row.get(name) or "").strip().lower()
 
@@ -92,8 +114,8 @@ def main():
             if not numbers:
                 continue
             records += 1
-            first = row["FirstName"].split()[0].title()
-            body = template.format(FirstName=first, PropertyAddress=row["PropertyAddress"].strip())
+            first = greeting_name(row, row["FirstName"].split()[0].title())
+            body = render(template, first, row["PropertyAddress"].strip())
             for phone in numbers:
                 seen.add(phone)
                 print(f"{clock:%H:%M:%S}  {phone}  {body}")

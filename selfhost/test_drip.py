@@ -244,6 +244,22 @@ class DripTest(unittest.TestCase):
                                ("Maybe", "replied"), ("Nobody lives there", "replied")]:
             self.assertEqual(drip.classify_reply(text), expected, text)
 
+    def test_render_fixes_address_and_blank_name(self):
+        steps = json.loads((Path(drip.__file__).parent / "drip_messages.json").read_text())
+        self.assertIn("104th St", drip.render(steps[0]["template"], "Sam", "131 W 104Th St"))
+        self.assertIn("71st", drip.fix_address("915 W 71St St"))
+        self.assertEqual(drip.fix_address("12 S State St"), "12 S State St")
+        self.assertTrue(drip.render(steps[0]["template"], "", "1 St").startswith("Hi, this is Jas"))
+        self.assertTrue(drip.render(steps[1]["template"], "", "1 St").startswith("Hi, Jas again"))
+        self.assertTrue(drip.render(steps[2]["template"], "", "1 St").startswith("Jas from Vig Estates"))
+        self.assertTrue(drip.render(steps[3]["template"], "", "1 St").startswith("Jas from Vig Estates"))
+
+    def test_greeting_name(self):
+        self.assertEqual(drip.greeting_name({"Contact1Name": "Sam Lee"}, "Sam"), "Sam")
+        self.assertEqual(drip.greeting_name({"Contact1Name": "M Jones"}, "M"), "")
+        self.assertEqual(drip.greeting_name({"Contact1Name": "Keith Baines"}, "Baines"), "")
+        self.assertEqual(drip.greeting_name({"Contact1Name": "Luis Cruz", "Contact2Name": "Patricia Cruz"}, "Patricia"), "Patricia")
+
     def test_limits(self):
         self.add([[f"31255501{i:02d}", "A", "1 St"] for i in range(40)])
         self.run_live("--daily-limit", "25", "--new-per-day", "5")
