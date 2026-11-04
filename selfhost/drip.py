@@ -6,6 +6,7 @@ Commands:
   run       send what's due (dry run unless --live); schedule this hourly
   status    show campaign counts
   replies   list people who replied and need a human follow-up
+  history   export every message sent and received to a CSV
   retry     put contacts marked failed back in the queue
   test      send every message right away to a few of your own numbers
 
@@ -211,6 +212,8 @@ def cmd_import(args):
                        VALUES (?, ?, ?, ?, ?)""",
                     (phone, first, address, stamp(), stamp()))
                 stats["added" if cur.rowcount else "already_enrolled"] += 1
+                if args.limit and stats["added"] >= args.limit:
+                    break
     db.commit()
     print(stats)
 
@@ -434,6 +437,19 @@ def cmd_replies(args):
         print("No replies waiting")
 
 
+def cmd_history(args):
+    db = connect(args.db)
+    rows = db.execute(
+        """SELECT m.created_at, m.phone, c.first_name, c.property_address, m.direction, m.step, m.status, m.body
+           FROM messages m JOIN contacts c ON c.phone=m.phone ORDER BY m.created_at, m.id""").fetchall()
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    with args.out.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["time_utc", "phone", "first_name", "property_address", "direction", "step", "status", "message"])
+        writer.writerows(tuple(row) for row in rows)
+    print(f"Wrote {len(rows)} messages to {args.out}")
+
+
 def cmd_retry(args):
     db = connect(args.db)
     cur = db.execute("""UPDATE contacts SET status='active', updated_at=?
@@ -495,6 +511,7 @@ def parse_args(argv=None):
     i.add_argument("--csv", type=Path, required=True)
     i.add_argument("--litigator-scrubbed", action="store_true",
                    help="you've screened this list yourself, so allow blank litigator fields")
+    i.add_argument("--limit", type=int, help="stop after adding this many new contacts")
     i.set_defaults(func=cmd_import)
 
     r = sub.add_parser("run")
@@ -522,6 +539,9 @@ def parse_args(argv=None):
 
     sub.add_parser("status").set_defaults(func=cmd_status)
     sub.add_parser("replies").set_defaults(func=cmd_replies)
+    h = sub.add_parser("history")
+    h.add_argument("--out", type=Path, default=HERE / "data/history.csv")
+    h.set_defaults(func=cmd_history)
     sub.add_parser("retry").set_defaults(func=cmd_retry)
     return p.parse_args(argv)
 

@@ -152,6 +152,25 @@ class DripTest(unittest.TestCase):
         self.run_live()
         self.assertEqual(len(self.gw.posts), 1)
 
+    def test_import_limit_and_no_reenrollment(self):
+        path = self.tmp / "c.csv"
+        path.write_text("phone,FirstName,PropertyAddress\n3125550100,A,1 St\n3125550101,B,2 St\n3125550102,C,3 St\n")
+        drip.main(self.base + ["import", "--csv", str(path), "--limit", "2"])
+        self.assertIsNone(self.contact("+13125550102"))
+        self.run_live()
+        drip.main(self.base + ["import", "--csv", str(path), "--limit", "1"])
+        self.assertEqual(self.contact("+13125550100")["step"], 1)
+        self.assertIsNotNone(self.contact("+13125550102"))
+
+    def test_history_export(self):
+        self.add([["3125550100", "Sam", "1 St"]])
+        self.run_live()
+        out = self.tmp / "h.csv"
+        drip.main(self.base + ["history", "--out", str(out)])
+        rows = list(csv.DictReader(out.open()))
+        self.assertEqual(rows[0]["phone"], "+13125550100")
+        self.assertEqual(rows[0]["direction"], "out")
+
     def test_limits(self):
         self.add([[f"31255501{i:02d}", "A", "1 St"] for i in range(40)])
         self.run_live("--daily-limit", "25", "--new-per-day", "5")

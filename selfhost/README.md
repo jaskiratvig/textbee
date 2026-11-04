@@ -101,7 +101,7 @@ python3 selfhost/drip.py import --csv ../list.csv
 python3 selfhost/drip.py status
 ```
 
-A raw export keeps one mobile number per property for individual owners whose first name matches `Contact1Name`. It skips DNC numbers, tenants, vacant land and blank litigator fields. Add `--litigator-scrubbed` only after screening the list yourself.
+A raw export keeps one mobile number per property for individual owners whose first name matches `Contact1Name`. It skips DNC numbers, tenants, vacant land and blank litigator fields. Add `--litigator-scrubbed` only after screening the list yourself. Add `--limit 100` to cap how many new contacts get added.
 
 Preview, then send:
 
@@ -123,6 +123,7 @@ Check the campaign with:
 python3 selfhost/drip.py replies   # people to follow up with
 python3 selfhost/drip.py status    # counts by status
 python3 selfhost/drip.py retry     # requeue failed contacts, after confirming they weren't texted
+python3 selfhost/drip.py history   # export all messages to selfhost/data/history.csv
 ```
 
 Run the tests with `python3 selfhost/test_drip.py`.
