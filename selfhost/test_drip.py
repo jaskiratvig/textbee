@@ -164,6 +164,29 @@ class DripTest(unittest.TestCase):
             self.run_live("--batch-size", "20", "--daily-limit", "40", "--new-per-day", "40")
         self.assertEqual(len(self.gw.posts), 1)
 
+    def write_test_csv(self):
+        path = self.tmp / "t.csv"
+        path.write_text("phone,first_name,address\n3125550100,Sam,1 Main St\n")
+        return ["test", "--csv", str(path), "--api-url", self.gw.url, "--device-id", "d"]
+
+    def test_test_command_sends_all_steps_without_touching_campaign(self):
+        drip.main(self.base + self.write_test_csv())
+        self.assertEqual(len(self.gw.posts[0]["messages"]), 4)
+        self.assertIn("Sam", self.gw.posts[0]["messages"][0]["message"])
+        self.assertIsNone(self.contact("+13125550100"))
+
+    def test_test_command_refuses_opted_out_number(self):
+        self.gw.replies = [{"_id": "1", "sender": "+13125550100", "message": "STOP"}]
+        with self.assertRaises(SystemExit):
+            drip.main(self.base + self.write_test_csv())
+        self.assertEqual(self.gw.posts, [])
+
+    def test_test_command_respects_hours(self):
+        self.set_time(2026, 11, 5, 4)
+        with self.assertRaises(SystemExit):
+            drip.main(self.base + self.write_test_csv())
+        self.assertEqual(self.gw.posts, [])
+
     def test_raw_export_rules(self):
         fields = ["OwnerType", "PropertyType", "FirstName", "Contact1Name", "Contact1Type", "PropertyAddress",
                   "Contact1Phone_1", "Contact1Phone_1_Type", "Contact1Phone_1_DNC", "Contact1Phone_1_Litigator"]

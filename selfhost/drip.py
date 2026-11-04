@@ -7,6 +7,7 @@ Commands:
   status    show campaign counts
   replies   list people who replied and need a human follow-up
   retry     put contacts marked failed back in the queue
+  test      send every message right away to a few of your own numbers
 
 Any reply stops automated texts to that person. Opt-outs and wrong numbers are
 suppressed permanently, and also added to the file send_batches.py reads.
@@ -33,6 +34,7 @@ FINAL_FAILED = {"failed"}
 FINAL_OK = {"sent", "delivered"}
 BREAKER_MIN_RESULTS = 10
 BREAKER_FAIL_RATE = 0.2
+TEST_MAX_RECIPIENTS = 5
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS contacts (
@@ -425,6 +427,47 @@ def cmd_retry(args):
     print(f"Requeued {cur.rowcount}")
 
 
+def cmd_test(args):
+    """Send every step at once to a few of your own numbers, without touching the campaign."""
+    if not 8 <= args.start_hour < args.end_hour <= 21:
+        sys.exit("Sending hours must fall between 8 and 21")
+    steps = load_steps(args.messages)
+    key = os.environ.get("TEXTBEE_API_KEY", "")
+    if not (key and args.device_id):
+        sys.exit("test needs --device-id and the TEXTBEE_API_KEY environment variable")
+    now = utcnow().astimezone(ZoneInfo(args.timezone))
+    if not args.start_hour <= now.hour < args.end_hour:
+        sys.exit(f"{now:%a %H:%M %Z}: outside sending hours, nothing sent")
+    with args.csv.open(newline="", encoding="utf-8-sig") as f:
+        rows = list(csv.DictReader(f))
+    if not 1 <= len(rows) <= TEST_MAX_RECIPIENTS:
+        sys.exit(f"Test CSV must have 1 to {TEST_MAX_RECIPIENTS} rows of your own numbers")
+    db = connect(args.db)
+    absorb_suppress_file(db, args.suppress)
+    try:
+        sync_replies(db, args, key)
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        sys.exit(f"Couldn't read replies, so nothing was sent: {e}")
+    messages = []
+    for row in rows:
+        phone = normalize(row.get("phone"))
+        first = first_word(row.get("FirstName") or row.get("first_name")).title()
+        address = (row.get("PropertyAddress") or row.get("address") or "").strip()
+        if not phone or not first or not address:
+            sys.exit("Each test row needs a valid phone, a first name and an address")
+        if db.execute("SELECT 1 FROM suppressions WHERE phone=?", (phone,)).fetchone():
+            sys.exit(f"{phone} is opted out, so nothing was sent. Clear it first if it's your own test number.")
+        for step in steps:
+            messages.append({"message": step["template"].format(FirstName=first, PropertyAddress=address),
+                             "recipients": [phone]})
+    try:
+        api(args, key, "POST", f"/gateway/devices/{args.device_id}/send-bulk-sms",
+            {"messageTemplate": "drip test", "messages": messages})
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        sys.exit(f"Test send failed: {e}")
+    print(f"Queued {len(messages)} test texts. The phone app's Send Delay sets the gap between them.")
+
+
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--db", type=Path, default=HERE / "data/drip.sqlite3")
@@ -450,6 +493,16 @@ def parse_args(argv=None):
     r.add_argument("--end-hour", type=int, default=20)
     r.add_argument("--live", action="store_true")
     r.set_defaults(func=cmd_run)
+
+    t = sub.add_parser("test")
+    t.add_argument("--csv", type=Path, required=True)
+    t.add_argument("--device-id")
+    t.add_argument("--api-url", default="http://127.0.0.1:3001/api/v1")
+    t.add_argument("--messages", type=Path, default=HERE / "drip_messages.json")
+    t.add_argument("--timezone", default="America/Chicago")
+    t.add_argument("--start-hour", type=int, default=9)
+    t.add_argument("--end-hour", type=int, default=20)
+    t.set_defaults(func=cmd_test)
 
     sub.add_parser("status").set_defaults(func=cmd_status)
     sub.add_parser("replies").set_defaults(func=cmd_replies)
