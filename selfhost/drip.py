@@ -475,6 +475,7 @@ def cmd_test(args):
         sys.exit(f"Test CSV must have 1 to {TEST_MAX_RECIPIENTS} rows of your own numbers")
     db = connect(args.db)
     absorb_suppress_file(db, args.suppress)
+    db.commit()
     try:
         check_phone_online(args, key)
         sync_replies(db, args, key)
