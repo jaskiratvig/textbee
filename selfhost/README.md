@@ -128,3 +128,17 @@ python3 selfhost/drip.py history   # export all messages to selfhost/data/histor
 
 Run the tests with `python3 selfhost/test_drip.py`.
 
+## 6. Move to an always-on server
+
+The phone stays the sender. The server runs the API, database and schedule, so your computer can be off.
+
+Create an Ubuntu server with at least 2 GB of memory, plus swap. Then:
+
+1. On the server, clone this branch and run `./selfhost/migrate_server_setup.sh`, then log out and back in.
+2. Stop every send on the old machine, and remove its drip line from `crontab -e`.
+3. On the old machine, run `./selfhost/migrate_export.sh`, then copy `~/textbee-migration.tar.gz` to the server with `scp`.
+4. Rename the old machine in the Tailscale admin console. Then on the server run `sudo tailscale up --hostname=OLD-MACHINE-NAME` so the address stays the same and the phone app doesn't need a rebuild.
+5. Enable Serve on the server with `sudo tailscale serve --bg 3000` and `sudo tailscale serve --bg --set-path /api/v1 http://127.0.0.1:3001/api/v1`.
+6. On the server, run `./selfhost/migrate_import.sh ~/textbee-migration.tar.gz`, then delete the archive.
+7. Check `selfhost/drip.py status` and a phone heartbeat before adding the hourly schedule on the server.
+
