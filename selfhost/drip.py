@@ -169,8 +169,6 @@ def usable_numbers(row, contact, first, litigator_scrubbed):
         phone = normalize(row.get(prefix))
         if not phone or (row.get(f"{prefix}_Type") or "").strip().lower() != "mobile":
             continue
-        if (row.get(f"{prefix}_DNC") or "").strip().lower() != "false":
-            reason = "dnc"
         elif not litigator_scrubbed and (row.get(f"{prefix}_Litigator") or "").strip().lower() != "false":
             reason = "litigator_not_screened"
         else:
