@@ -9,7 +9,7 @@
   },
   {
     "day": 21,
-    "template": "{FirstName}, Jas from Vig Estates. My therapist says I should stop asking about {PropertyAddress}. She doesn't work in real estate. Open to an offer? Reply STOP to opt out."
+    "template": "{FirstName}, Jas from Vig Estates. My therapist says to stop asking about {PropertyAddress}. She's not in real estate. Any interest? Reply STOP to opt out."
   },
   {
     "day": 60,
