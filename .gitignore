@@ -12,3 +12,5 @@ api/tmp/
 .env
 selfhost/firebase-service-account.json
 selfhost/data/
+
+__pycache__/
