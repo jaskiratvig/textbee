@@ -210,14 +210,16 @@ class DripTest(unittest.TestCase):
         db = drip.connect(self.tmp / "d.sqlite3")
         self.assertEqual({r["property_address"] for r in db.execute("SELECT property_address FROM contacts")}, {"1 St"})
 
-    def test_household_reply_or_stop_stops_other_numbers(self):
+    def test_each_reply_stops_only_that_number(self):
         drip.main(self.base + ["import", "--csv", str(self.write_raw([self.multi_row()])), "--all-numbers"])
-        self.gw.replies = [{"_id": "1", "sender": "+13125550100", "message": "STOP"}]
+        self.gw.replies = [{"_id": "1", "sender": "+13125550100", "message": "STOP"},
+                           {"_id": "2", "sender": "+13125550101", "message": "who is this"}]
         self.run_live()
-        self.assertEqual(self.gw.posts, [])
         self.assertEqual(self.contact("+13125550100")["status"], "opted_out")
-        self.assertEqual(self.contact("+13125550101")["status"], "stopped_household_replied")
-        self.assertNotIn("+13125550101", (self.tmp / "s.txt").read_text())
+        self.assertEqual(self.contact("+13125550101")["status"], "replied")
+        self.assertEqual(self.contact("+13125550103")["status"], "active")
+        self.assertEqual(self.recipients(), ["+13125550103"])
+        self.assertNotIn("+13125550103", (self.tmp / "s.txt").read_text())
 
     def test_wrong_number_leaves_other_numbers_active(self):
         drip.main(self.base + ["import", "--csv", str(self.write_raw([self.multi_row()])), "--all-numbers"])

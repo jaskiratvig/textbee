@@ -10,10 +10,9 @@ Commands:
   retry     put contacts marked failed back in the queue
   test      send every message right away to a few of your own numbers
 
-Any reply stops automated texts to that number. Opt-outs, declines and wrong
-numbers are suppressed permanently, and also added to the file send_batches.py
-reads. STOP or a normal reply also stops the property's other numbers; a decline
-or wrong number leaves them active.
+Any reply stops automated texts to that number only; a property's other numbers
+keep their schedule. Opt-outs, declines and wrong numbers are suppressed
+permanently, and also added to the file send_batches.py reads.
 """
 import argparse
 import csv
@@ -298,13 +297,6 @@ def sync_replies(db, args, key):
                     (stamp(), phone))
             if cur.rowcount:
                 counts[outcome] += 1
-            if outcome in ("opted_out", "replied"):
-                # The household has answered, so stop texting the property's other numbers.
-                db.execute(
-                    """UPDATE contacts SET status='stopped_household_replied', updated_at=?
-                       WHERE status='active' AND phone<>? AND property_address IN
-                         (SELECT property_address FROM contacts WHERE phone=?)""",
-                    (stamp(), phone, phone))
         if len(rows) < 100:
             break
         page += 1
