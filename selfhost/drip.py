@@ -10,8 +10,10 @@ Commands:
   retry     put contacts marked failed back in the queue
   test      send every message right away to a few of your own numbers
 
-Any reply stops automated texts to that person. Opt-outs and wrong numbers are
-suppressed permanently, and also added to the file send_batches.py reads.
+Any reply stops automated texts to that number. Opt-outs, declines and wrong
+numbers are suppressed permanently, and also added to the file send_batches.py
+reads. STOP or a normal reply also stops the property's other numbers; a decline
+or wrong number leaves them active.
 """
 import argparse
 import csv
@@ -31,6 +33,9 @@ OPT_OUT_WORDS = {"STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "OPT
 OPT_OUT_PHRASES = ("opt out", "remove me", "take me off", "do not text", "don't text", "dont text",
                    "do not contact", "don't contact", "stop texting", "stop messaging", "leave me alone")
 WRONG_NUMBER_PHRASES = ("wrong number", "wrong person", "not the owner", "don't own", "dont own")
+DECLINE_EXACT = re.compile(r"(no|nope|nah)( thanks?| thank you| sir| ma'?am)?")
+DECLINE_PHRASES = ("not interested", "no interest", "not selling", "not for sale", "don't want to sell",
+                   "dont want to sell", "do not want to sell", "won't sell", "wont sell", "will not sell")
 FINAL_FAILED = {"failed"}
 FINAL_OK = {"sent", "delivered"}
 BREAKER_MIN_RESULTS = 10
@@ -98,6 +103,9 @@ def classify_reply(text):
         return "opted_out"
     if any(phrase in lowered for phrase in WRONG_NUMBER_PHRASES):
         return "wrong_number"
+    cleaned = re.sub(r"[^a-z' ]", "", lowered).strip()
+    if DECLINE_EXACT.fullmatch(cleaned) or any(phrase in lowered for phrase in DECLINE_PHRASES):
+        return "declined"
     return "replied"
 
 
@@ -264,7 +272,7 @@ def check_phone_online(args, key):
 
 
 def sync_replies(db, args, key):
-    counts = {"opted_out": 0, "wrong_number": 0, "replied": 0}
+    counts = {"opted_out": 0, "wrong_number": 0, "declined": 0, "replied": 0}
     page = 1
     while True:
         result = api(args, key, "GET", f"/gateway/devices/{args.device_id}/get-received-sms?page={page}&limit=100")
@@ -281,7 +289,7 @@ def sync_replies(db, args, key):
             db.execute(
                 "INSERT INTO messages (phone, direction, body, status, gateway_id, created_at) VALUES (?, 'in', ?, ?, ?, ?)",
                 (phone, row.get("message"), outcome, gateway_id, row.get("receivedAt") or stamp()))
-            if outcome in ("opted_out", "wrong_number"):
+            if outcome in ("opted_out", "wrong_number", "declined"):
                 suppress(db, phone, outcome, args.suppress)
                 cur = db.execute("UPDATE contacts SET status=?, updated_at=? WHERE phone=?", (outcome, stamp(), phone))
             else:

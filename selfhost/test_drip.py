@@ -226,6 +226,22 @@ class DripTest(unittest.TestCase):
         self.assertEqual(self.contact("+13125550100")["status"], "wrong_number")
         self.assertEqual(self.contact("+13125550101")["status"], "active")
 
+    def test_decline_stops_only_that_number(self):
+        drip.main(self.base + ["import", "--csv", str(self.write_raw([self.multi_row()])), "--all-numbers"])
+        self.gw.replies = [{"_id": "1", "sender": "+13125550100", "message": "No thanks!"}]
+        self.run_live()
+        self.assertEqual(self.contact("+13125550100")["status"], "declined")
+        self.assertEqual(self.contact("+13125550101")["status"], "active")
+        self.assertIn("+13125550100", (self.tmp / "s.txt").read_text())
+
+    def test_reply_classification(self):
+        for text, expected in [("No", "declined"), ("no.", "declined"), ("not interested", "declined"),
+                               ("Not selling, sorry", "declined"), ("No thanks, leave me alone", "opted_out"),
+                               ("stop", "opted_out"), ("Wrong number", "wrong_number"),
+                               ("No Sam here", "replied"), ("Not sure, how much?", "replied"),
+                               ("Maybe", "replied"), ("Nobody lives there", "replied")]:
+            self.assertEqual(drip.classify_reply(text), expected, text)
+
     def test_limits(self):
         self.add([[f"31255501{i:02d}", "A", "1 St"] for i in range(40)])
         self.run_live("--daily-limit", "25", "--new-per-day", "5")

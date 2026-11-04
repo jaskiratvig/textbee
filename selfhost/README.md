@@ -90,7 +90,7 @@ A successful run means the batch was queued. Check the dashboard to confirm deli
 
 ## 5. Drip campaign
 
-Messages and timing live in `selfhost/drip_messages.json`: days 0, 5, 21 and 60. Any reply stops automated texts to that person. Opt-outs and wrong numbers are suppressed permanently.
+Messages and timing live in `selfhost/drip_messages.json`: days 0, 5, 21 and 60. Any reply stops automated texts to that person. Opt-outs, declines and wrong numbers are suppressed permanently.
 
 Before going live, confirm a STOP from your own phone shows up on your server. The drip can't detect a reply that never reaches it.
 
@@ -101,7 +101,7 @@ python3 selfhost/drip.py import --csv ../list.csv
 python3 selfhost/drip.py status
 ```
 
-A raw export keeps one mobile number per property for individual owners whose first name matches `Contact1Name`. It skips DNC numbers, tenants, vacant land and blank litigator fields. Add `--litigator-scrubbed` only after screening the list yourself. Add `--limit 100` to cap how many new records get added. Add `--all-numbers` to text every usable mobile number whose contact name matches the owner. A reply or opt-out from one number then stops the property's other numbers, while a wrong-number reply only stops that number.
+A raw export keeps one mobile number per property for individual owners whose first name matches `Contact1Name`. It skips DNC numbers, tenants, vacant land and blank litigator fields. Add `--litigator-scrubbed` only after screening the list yourself. Add `--limit 100` to cap how many new records get added. Add `--all-numbers` to text every usable mobile number whose contact name matches the owner. STOP or a normal reply from one number then stops the property's other numbers, while a decline such as `no` or `not interested`, or a wrong-number reply, only stops that number.
 
 Preview, then send:
 
