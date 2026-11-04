@@ -147,40 +147,54 @@ def first_word(value):
     return parts[0] if parts else ""
 
 
-def pick_from_raw(row, litigator_scrubbed):
-    """Choose one number from a raw export row, or return a reason to skip the row."""
-    if (row.get("OwnerType") or "").strip().upper() != "INDIVIDUAL":
-        return None, None, "not_individual_owner"
-    if (row.get("PropertyType") or "").strip().lower() == "vacant land":
-        return None, None, "vacant_land"
-    first = first_word(row.get("FirstName")).title()
-    if not first:
-        return None, None, "no_name"
-    if (row.get("Contact1Type") or "").strip().lower() == "tenant":
-        return None, None, "tenant"
-    if first.lower() not in re.findall(r"[a-z'-]+", (row.get("Contact1Name") or "").lower()):
-        return None, None, "contact_name_mismatch"
-    reason = "no_usable_mobile"
+def usable_numbers(row, contact, first, litigator_scrubbed):
+    """Return one contact's usable numbers, plus the reason if there are none."""
+    name = (row.get(f"Contact{contact}Name") or "").lower()
+    if not name.strip():
+        return [], None
+    if (row.get(f"Contact{contact}Type") or "").strip().lower() == "tenant":
+        return [], "tenant"
+    if first.lower() not in re.findall(r"[a-z'-]+", name):
+        return [], "contact_name_mismatch"
+    found, reason = [], "no_usable_mobile"
     for i in (1, 2, 3):
-        prefix = f"Contact1Phone_{i}"
+        prefix = f"Contact{contact}Phone_{i}"
         phone = normalize(row.get(prefix))
         if not phone or (row.get(f"{prefix}_Type") or "").strip().lower() != "mobile":
             continue
         if (row.get(f"{prefix}_DNC") or "").strip().lower() != "false":
             reason = "dnc"
-            continue
-        if not litigator_scrubbed and (row.get(f"{prefix}_Litigator") or "").strip().lower() != "false":
+        elif not litigator_scrubbed and (row.get(f"{prefix}_Litigator") or "").strip().lower() != "false":
             reason = "litigator_not_screened"
-            continue
-        return phone, first, None
-    return None, None, reason
+        else:
+            found.append(phone)
+    return found, None if found else reason
+
+
+def pick_from_raw(row, litigator_scrubbed, all_numbers=False):
+    """Choose the numbers to text for a raw export row, or return why the row is skipped."""
+    if (row.get("OwnerType") or "").strip().upper() != "INDIVIDUAL":
+        return [], None, "not_individual_owner"
+    if (row.get("PropertyType") or "").strip().lower() == "vacant land":
+        return [], None, "vacant_land"
+    first = first_word(row.get("FirstName")).title()
+    if not first:
+        return [], None, "no_name"
+    numbers, reason = usable_numbers(row, 1, first, litigator_scrubbed)
+    if all_numbers:
+        for contact in range(2, 9):
+            more, _ = usable_numbers(row, contact, first, litigator_scrubbed)
+            numbers += [n for n in more if n not in numbers]
+    elif numbers:
+        numbers = numbers[:1]
+    return (numbers, first, None) if numbers else ([], None, reason)
 
 
 def cmd_import(args):
     db = connect(args.db)
     absorb_suppress_file(db, args.suppress)
     sent_before = read_number_file(args.sent_log)
-    stats = {"added": 0, "invalid": 0, "suppressed": 0, "already_texted": 0, "already_enrolled": 0, "no_address": 0}
+    stats = {"records_added": 0, "added": 0, "invalid": 0, "suppressed": 0, "already_texted": 0, "already_enrolled": 0, "no_address": 0}
     with args.csv.open(newline="", encoding="utf-8-sig", errors="replace") as f:
         reader = csv.DictReader(f)
         fields = set(reader.fieldnames or [])
@@ -189,7 +203,7 @@ def cmd_import(args):
             sys.exit("CSV needs phone, FirstName and PropertyAddress columns, or a raw skip-trace export")
         for row in reader:
             if raw:
-                phone, first, reason = pick_from_raw(row, args.litigator_scrubbed)
+                phones, first, reason = pick_from_raw(row, args.litigator_scrubbed, args.all_numbers)
                 if reason:
                     stats[reason] = stats.get(reason, 0) + 1
                     continue
@@ -198,21 +212,28 @@ def cmd_import(args):
                 if not phone or not first:
                     stats["invalid"] += 1
                     continue
+                phones = [phone]
             address = (row.get("PropertyAddress") or "").strip()
             if not address:
                 stats["no_address"] += 1
-            elif db.execute("SELECT 1 FROM suppressions WHERE phone=?", (phone,)).fetchone():
-                stats["suppressed"] += 1
-            elif phone in sent_before:
-                stats["already_texted"] += 1
-            else:
-                cur = db.execute(
-                    """INSERT OR IGNORE INTO contacts
-                       (phone, first_name, property_address, enrolled_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (phone, first, address, stamp(), stamp()))
-                stats["added" if cur.rowcount else "already_enrolled"] += 1
-                if args.limit and stats["added"] >= args.limit:
+                continue
+            added_any = False
+            for phone in phones:
+                if db.execute("SELECT 1 FROM suppressions WHERE phone=?", (phone,)).fetchone():
+                    stats["suppressed"] += 1
+                elif phone in sent_before:
+                    stats["already_texted"] += 1
+                else:
+                    cur = db.execute(
+                        """INSERT OR IGNORE INTO contacts
+                           (phone, first_name, property_address, enrolled_at, updated_at)
+                           VALUES (?, ?, ?, ?, ?)""",
+                        (phone, first, address, stamp(), stamp()))
+                    stats["added" if cur.rowcount else "already_enrolled"] += 1
+                    added_any = added_any or bool(cur.rowcount)
+            if added_any:
+                stats["records_added"] += 1
+                if args.limit and stats["records_added"] >= args.limit:
                     break
     db.commit()
     print(stats)
@@ -269,6 +290,13 @@ def sync_replies(db, args, key):
                     (stamp(), phone))
             if cur.rowcount:
                 counts[outcome] += 1
+            if outcome in ("opted_out", "replied"):
+                # The household has answered, so stop texting the property's other numbers.
+                db.execute(
+                    """UPDATE contacts SET status='stopped_household_replied', updated_at=?
+                       WHERE status='active' AND phone<>? AND property_address IN
+                         (SELECT property_address FROM contacts WHERE phone=?)""",
+                    (stamp(), phone, phone))
         if len(rows) < 100:
             break
         page += 1
@@ -512,7 +540,9 @@ def parse_args(argv=None):
     i.add_argument("--csv", type=Path, required=True)
     i.add_argument("--litigator-scrubbed", action="store_true",
                    help="you've screened this list yourself, so allow blank litigator fields")
-    i.add_argument("--limit", type=int, help="stop after adding this many new contacts")
+    i.add_argument("--limit", type=int, help="stop after adding numbers for this many new records")
+    i.add_argument("--all-numbers", action="store_true",
+                   help="add every usable number whose contact name matches the owner, not just the first")
     i.set_defaults(func=cmd_import)
 
     r = sub.add_parser("run")

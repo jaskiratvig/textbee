@@ -171,6 +171,61 @@ class DripTest(unittest.TestCase):
         self.assertEqual(rows[0]["phone"], "+13125550100")
         self.assertEqual(rows[0]["direction"], "out")
 
+    def write_raw(self, rows):
+        fields = sorted({k for row in rows for k in row})
+        path = self.tmp / "raw2.csv"
+        with path.open("w", newline="") as f:
+            w = csv.DictWriter(f, fields)
+            w.writeheader()
+            w.writerows(rows)
+        return path
+
+    def multi_row(self):
+        row = {"OwnerType": "INDIVIDUAL", "PropertyType": "Single Family", "FirstName": "SAM", "PropertyAddress": "1 St",
+               "Contact1Name": "Sam Lee", "Contact2Name": "Sam Lee Jr", "Contact3Name": "Pat Doe", "Contact4Name": "Sam Tenant", "Contact4Type": "Tenant"}
+        for name, phone, kind, dnc in [("Contact1Phone_1", "3125550100", "Mobile", "False"), ("Contact1Phone_2", "3125550101", "mobile", "False"),
+                                       ("Contact1Phone_3", "3125550102", "mobile", "True"), ("Contact2Phone_1", "3125550103", "mobile", "False"),
+                                       ("Contact3Phone_1", "3125550104", "mobile", "False"), ("Contact4Phone_1", "3125550105", "mobile", "False")]:
+            row.update({name: phone, f"{name}_Type": kind, f"{name}_DNC": dnc, f"{name}_Litigator": "False"})
+        return row
+
+    def test_all_numbers_import(self):
+        drip.main(self.base + ["import", "--csv", str(self.write_raw([self.multi_row()])), "--all-numbers"])
+        db = drip.connect(self.tmp / "d.sqlite3")
+        self.assertEqual(sorted(r["phone"] for r in db.execute("SELECT phone FROM contacts")),
+                         ["+13125550100", "+13125550101", "+13125550103"])
+
+    def test_default_import_takes_one_number(self):
+        drip.main(self.base + ["import", "--csv", str(self.write_raw([self.multi_row()]))])
+        db = drip.connect(self.tmp / "d.sqlite3")
+        self.assertEqual([r["phone"] for r in db.execute("SELECT phone FROM contacts")], ["+13125550100"])
+
+    def test_limit_counts_records_with_all_numbers(self):
+        second = self.multi_row()
+        second["PropertyAddress"] = "2 St"
+        for key in list(second):
+            if key.endswith(("Phone_1", "Phone_2", "Phone_3")):
+                second[key] = "312555" + str(int(second[key][6:]) + 100).zfill(4)
+        drip.main(self.base + ["import", "--csv", str(self.write_raw([self.multi_row(), second])), "--all-numbers", "--limit", "1"])
+        db = drip.connect(self.tmp / "d.sqlite3")
+        self.assertEqual({r["property_address"] for r in db.execute("SELECT property_address FROM contacts")}, {"1 St"})
+
+    def test_household_reply_or_stop_stops_other_numbers(self):
+        drip.main(self.base + ["import", "--csv", str(self.write_raw([self.multi_row()])), "--all-numbers"])
+        self.gw.replies = [{"_id": "1", "sender": "+13125550100", "message": "STOP"}]
+        self.run_live()
+        self.assertEqual(self.gw.posts, [])
+        self.assertEqual(self.contact("+13125550100")["status"], "opted_out")
+        self.assertEqual(self.contact("+13125550101")["status"], "stopped_household_replied")
+        self.assertNotIn("+13125550101", (self.tmp / "s.txt").read_text())
+
+    def test_wrong_number_leaves_other_numbers_active(self):
+        drip.main(self.base + ["import", "--csv", str(self.write_raw([self.multi_row()])), "--all-numbers"])
+        self.gw.replies = [{"_id": "1", "sender": "+13125550100", "message": "wrong number"}]
+        self.run_live()
+        self.assertEqual(self.contact("+13125550100")["status"], "wrong_number")
+        self.assertEqual(self.contact("+13125550101")["status"], "active")
+
     def test_limits(self):
         self.add([[f"31255501{i:02d}", "A", "1 St"] for i in range(40)])
         self.run_live("--daily-limit", "25", "--new-per-day", "5")
