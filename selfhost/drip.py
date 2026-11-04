@@ -159,10 +159,6 @@ def usable_numbers(row, contact, first, litigator_scrubbed):
     name = (row.get(f"Contact{contact}Name") or "").lower()
     if not name.strip():
         return [], None
-    if (row.get(f"Contact{contact}Type") or "").strip().lower() == "tenant":
-        return [], "tenant"
-    if first.lower() not in re.findall(r"[a-z'-]+", name):
-        return [], "contact_name_mismatch"
     found, reason = [], "no_usable_mobile"
     for i in (1, 2, 3):
         prefix = f"Contact{contact}Phone_{i}"
