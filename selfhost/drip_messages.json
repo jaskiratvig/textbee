@@ -1,0 +1,18 @@
+[
+  {
+    "day": 0,
+    "template": "Hi {FirstName}, this is Jas with Vig Estates. Would you consider selling {PropertyAddress}? Reply STOP to opt out."
+  },
+  {
+    "day": 5,
+    "template": "Hi {FirstName}, Jas again. My mom says persistence is my best quality. Any interest in an offer on {PropertyAddress}? Reply STOP to opt out."
+  },
+  {
+    "day": 21,
+    "template": "{FirstName}, Jas from Vig Estates. My therapist says I should stop asking about {PropertyAddress}. She doesn't work in real estate. Open to an offer? Reply STOP to opt out."
+  },
+  {
+    "day": 60,
+    "template": "{FirstName}, Jas from Vig Estates, officially leaving you alone about {PropertyAddress}. If you ever want an offer, the door's open. Reply STOP to opt out."
+  }
+]
