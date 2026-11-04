@@ -193,7 +193,7 @@ class DripTest(unittest.TestCase):
         drip.main(self.base + ["import", "--csv", str(self.write_raw([self.multi_row()])), "--all-numbers"])
         db = drip.connect(self.tmp / "d.sqlite3")
         self.assertEqual(sorted(r["phone"] for r in db.execute("SELECT phone FROM contacts")),
-                         ["+13125550100", "+13125550101", "+13125550103"])
+                         ["+13125550100", "+13125550101", "+13125550103", "+13125550104", "+13125550105"])
 
     def test_default_import_takes_one_number(self):
         drip.main(self.base + ["import", "--csv", str(self.write_raw([self.multi_row()]))])
@@ -218,7 +218,7 @@ class DripTest(unittest.TestCase):
         self.assertEqual(self.contact("+13125550100")["status"], "opted_out")
         self.assertEqual(self.contact("+13125550101")["status"], "replied")
         self.assertEqual(self.contact("+13125550103")["status"], "active")
-        self.assertEqual(self.recipients(), ["+13125550103"])
+        self.assertEqual(sorted(self.recipients()), ["+13125550103", "+13125550104", "+13125550105"])
         self.assertNotIn("+13125550103", (self.tmp / "s.txt").read_text())
 
     def test_wrong_number_leaves_other_numbers_active(self):
@@ -329,7 +329,9 @@ class DripTest(unittest.TestCase):
             w.writerows(rows)
         drip.main(self.base + ["import", "--csv", str(path)])
         db = drip.connect(self.tmp / "d.sqlite3")
-        self.assertEqual([r["phone"] for r in db.execute("SELECT phone FROM contacts")], ["+13125550100"])
+        # Tenant and name-mismatch contacts stay in; DNC, litigator, non-mobile, business and vacant land don't.
+        self.assertEqual(sorted(r["phone"] for r in db.execute("SELECT phone FROM contacts")),
+                         ["+13125550100", "+13125550103", "+13125550105"])
         self.assertEqual(self.contact("+13125550100")["first_name"], "Sam")
 
 
