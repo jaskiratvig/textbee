@@ -111,7 +111,7 @@ export TEXTBEE_API_KEY=your-key
 python3 selfhost/drip.py run --device-id YOUR_DEVICE_ID --live
 ```
 
-Each live run sends up to 20 texts, within limits of 25 a day and 15 new contacts a day. It pauses if 20% or more of the last 50 sends failed, once at least 10 results are in. To schedule it hourly during sending hours, run `crontab -e` and add this line, using your own paths:
+Each live run sends up to 20 texts, within limits of 25 a day and 15 new contacts a day. It pauses if the phone hasn't checked in for 90 minutes, or if 20% or more of the last 50 sends failed, once at least 10 results are in. To schedule it hourly during sending hours, run `crontab -e` and add this line, using your own paths:
 
 ```cron
 0 9-19 * * * cd /Users/you/sms-gateway/textbee && TEXTBEE_API_KEY=your-key /usr/bin/python3 selfhost/drip.py run --device-id YOUR_DEVICE_ID --live >> selfhost/data/drip.log 2>&1

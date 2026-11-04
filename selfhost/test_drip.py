@@ -17,6 +17,7 @@ import drip  # noqa: E402
 class Gateway:
     def __init__(self):
         self.replies, self.posts, self.statuses, self.fail_posts = [], [], {}, False
+        self.heartbeat = None
         gateway = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -29,7 +30,10 @@ class Gateway:
                 self.wfile.write(json.dumps(body).encode())
 
             def do_GET(self):
-                if "get-received-sms" in self.path:
+                if self.path.endswith("/gateway/devices/d"):
+                    beat = gateway.heartbeat or drip.utcnow().isoformat().replace("+00:00", "Z")
+                    self.respond(200, {"data": {"lastHeartbeat": beat}})
+                elif "get-received-sms" in self.path:
                     self.respond(200, {"data": gateway.replies})
                 else:
                     self.respond(200, {"data": [{"recipient": p, "status": s} for p, s in gateway.statuses.items()]})
@@ -135,6 +139,18 @@ class DripTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.run_live()
         self.assertEqual(self.contact("+13125550100")["step"], 0)
+
+    def test_stale_heartbeat_blocks_sending(self):
+        self.add([["3125550100", "A", "1 St"]])
+        self.gw.heartbeat = "2026-11-05T13:00:00.000Z"  # 3 hours before the test clock
+        with self.assertRaises(SystemExit):
+            self.run_live()
+        with self.assertRaises(SystemExit):
+            drip.main(self.base + self.write_test_csv())
+        self.assertEqual(self.gw.posts, [])
+        self.gw.heartbeat = "2026-11-05T15:30:00.000Z"
+        self.run_live()
+        self.assertEqual(len(self.gw.posts), 1)
 
     def test_limits(self):
         self.add([[f"31255501{i:02d}", "A", "1 St"] for i in range(40)])

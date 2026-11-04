@@ -35,6 +35,7 @@ FINAL_OK = {"sent", "delivered"}
 BREAKER_MIN_RESULTS = 10
 BREAKER_FAIL_RATE = 0.2
 TEST_MAX_RECIPIENTS = 5
+MAX_HEARTBEAT_AGE_MINUTES = 90
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS contacts (
@@ -225,6 +226,19 @@ def api(args, key, method, path, body=None):
         return json.load(response)
 
 
+def check_phone_online(args, key):
+    """Exit if the phone hasn't checked in, because replies can't arrive without that link."""
+    device = api(args, key, "GET", f"/gateway/devices/{args.device_id}").get("data") or {}
+    raw = device.get("lastHeartbeat")
+    if not raw:
+        sys.exit("Paused: the phone has never checked in with the server, so replies can't be trusted.")
+    seen = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    age = (utcnow() - seen).total_seconds() / 60
+    if age > MAX_HEARTBEAT_AGE_MINUTES:
+        sys.exit(f"Paused: the phone last checked in {age:.0f} minutes ago, so replies may not be arriving. "
+                 "Check Tailscale on the phone and the Mac.")
+
+
 def sync_replies(db, args, key):
     counts = {"opted_out": 0, "wrong_number": 0, "replied": 0}
     page = 1
@@ -337,6 +351,7 @@ def cmd_run(args):
 
     if args.live:
         try:
+            check_phone_online(args, key)
             replies = sync_replies(db, args, key)
             print(f"Replies processed: {replies}")
             sync_delivery(db, args, key)
@@ -445,6 +460,7 @@ def cmd_test(args):
     db = connect(args.db)
     absorb_suppress_file(db, args.suppress)
     try:
+        check_phone_online(args, key)
         sync_replies(db, args, key)
     except (urllib.error.URLError, TimeoutError, ValueError) as e:
         sys.exit(f"Couldn't read replies, so nothing was sent: {e}")
