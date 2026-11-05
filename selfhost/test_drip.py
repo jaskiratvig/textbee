@@ -260,13 +260,11 @@ class DripTest(unittest.TestCase):
         self.assertEqual(drip.greeting_name({"Contact1Name": "Keith Baines"}, "Baines"), "")
         self.assertEqual(drip.greeting_name({"Contact1Name": "Luis Cruz", "Contact2Name": "Patricia Cruz"}, "Patricia"), "Patricia")
 
-    def test_include_non_individual(self):
+    def test_non_individual_added_by_default(self):
         row = self.multi_row()
         row.update(OwnerType="LLC", FirstName="")
         path = self.write_raw([row])
-        drip.main(self.base + ["import", "--csv", str(path)])
-        self.assertIsNone(self.contact("+13125550100"))
-        drip.main(self.base + ["import", "--csv", str(path), "--include-non-individual", "--all-numbers"])
+        drip.main(self.base + ["import", "--csv", str(path), "--all-numbers"])
         self.assertEqual(self.contact("+13125550100")["first_name"], "")
         self.assertIsNone(self.contact("+13125550102"))  # flagged DNC
         self.run_live()
@@ -341,10 +339,11 @@ class DripTest(unittest.TestCase):
             w.writerows(rows)
         drip.main(self.base + ["import", "--csv", str(path)])
         db = drip.connect(self.tmp / "d.sqlite3")
-        # Tenant and name-mismatch contacts stay in; DNC, litigator, non-mobile, business and vacant land don't.
+        # Tenant, name-mismatch and business contacts stay in; DNC, litigator, non-mobile and vacant land don't.
         self.assertEqual(sorted(r["phone"] for r in db.execute("SELECT phone FROM contacts")),
-                         ["+13125550100", "+13125550103", "+13125550105"])
+                         ["+13125550100", "+13125550103", "+13125550104", "+13125550105"])
         self.assertEqual(self.contact("+13125550100")["first_name"], "Sam")
+        self.assertEqual(self.contact("+13125550104")["first_name"], "")
 
 
 if __name__ == "__main__":

@@ -101,7 +101,7 @@ python3 selfhost/drip.py import --csv ../list.csv
 python3 selfhost/drip.py status
 ```
 
-A raw export keeps one mobile number per property for individual owners whose first name matches `Contact1Name`. It skips DNC numbers, tenants, vacant land and blank litigator fields. Add `--litigator-scrubbed` only after screening the list yourself. Add `--include-non-individual` to also add business and trust owners with a no-name greeting. Add `--limit 100` to cap how many new records get added. Add `--all-numbers` to text every usable mobile number whose contact name matches the owner. A reply from one number only stops that number, so the property's other numbers keep their schedule.
+A raw export keeps one mobile number per property. It skips DNC numbers, vacant land and blank litigator fields. Add `--litigator-scrubbed` only after screening the list yourself. Business and trust owners are included with a no-name greeting. Add `--limit 100` to cap how many new records get added. Add `--all-numbers` to text every usable mobile number whose contact name matches the owner. A reply from one number only stops that number, so the property's other numbers keep their schedule.
 
 Preview, then send:
 

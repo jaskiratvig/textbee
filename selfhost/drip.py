@@ -199,11 +199,9 @@ def usable_numbers(row, contact, first, litigator_scrubbed):
     return found, None if found else reason
 
 
-def pick_from_raw(row, litigator_scrubbed, all_numbers=False, include_non_individual=False):
+def pick_from_raw(row, litigator_scrubbed, all_numbers=False):
     """Choose the numbers to text for a raw export row, or return why the row is skipped."""
     individual = (row.get("OwnerType") or "").strip().upper() == "INDIVIDUAL"
-    if not individual and not include_non_individual:
-        return [], None, "not_individual_owner"
     if (row.get("PropertyType") or "").strip().lower() == "vacant land":
         return [], None, "vacant_land"
     first = first_word(row.get("FirstName")).title() if individual else ""
@@ -233,8 +231,7 @@ def cmd_import(args):
             sys.exit("CSV needs phone, FirstName and PropertyAddress columns, or a raw skip-trace export")
         for row in reader:
             if raw:
-                phones, first, reason = pick_from_raw(
-                    row, args.litigator_scrubbed, args.all_numbers, args.include_non_individual)
+                phones, first, reason = pick_from_raw(row, args.litigator_scrubbed, args.all_numbers)
                 if reason:
                     stats[reason] = stats.get(reason, 0) + 1
                     continue
@@ -566,8 +563,6 @@ def parse_args(argv=None):
     i.add_argument("--limit", type=int, help="stop after adding numbers for this many new records")
     i.add_argument("--all-numbers", action="store_true",
                    help="add every usable number whose contact name matches the owner, not just the first")
-    i.add_argument("--include-non-individual", action="store_true",
-                   help="also add business and trust owners, with a no-name greeting")
     i.set_defaults(func=cmd_import)
 
     r = sub.add_parser("run")
