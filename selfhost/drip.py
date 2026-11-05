@@ -199,14 +199,15 @@ def usable_numbers(row, contact, first, litigator_scrubbed):
     return found, None if found else reason
 
 
-def pick_from_raw(row, litigator_scrubbed, all_numbers=False):
+def pick_from_raw(row, litigator_scrubbed, all_numbers=False, include_non_individual=False):
     """Choose the numbers to text for a raw export row, or return why the row is skipped."""
-    if (row.get("OwnerType") or "").strip().upper() != "INDIVIDUAL":
+    individual = (row.get("OwnerType") or "").strip().upper() == "INDIVIDUAL"
+    if not individual and not include_non_individual:
         return [], None, "not_individual_owner"
     if (row.get("PropertyType") or "").strip().lower() == "vacant land":
         return [], None, "vacant_land"
-    first = first_word(row.get("FirstName")).title()
-    if not first:
+    first = first_word(row.get("FirstName")).title() if individual else ""
+    if individual and not first:
         return [], None, "no_name"
     numbers, reason = usable_numbers(row, 1, first, litigator_scrubbed)
     if all_numbers:
@@ -215,7 +216,8 @@ def pick_from_raw(row, litigator_scrubbed, all_numbers=False):
             numbers += [n for n in more if n not in numbers]
     elif numbers:
         numbers = numbers[:1]
-    return (numbers, greeting_name(row, first), None) if numbers else ([], None, reason)
+    name = greeting_name(row, first) if individual else ""
+    return (numbers, name, None) if numbers else ([], None, reason)
 
 
 def cmd_import(args):
@@ -231,7 +233,8 @@ def cmd_import(args):
             sys.exit("CSV needs phone, FirstName and PropertyAddress columns, or a raw skip-trace export")
         for row in reader:
             if raw:
-                phones, first, reason = pick_from_raw(row, args.litigator_scrubbed, args.all_numbers)
+                phones, first, reason = pick_from_raw(
+                    row, args.litigator_scrubbed, args.all_numbers, args.include_non_individual)
                 if reason:
                     stats[reason] = stats.get(reason, 0) + 1
                     continue
@@ -563,6 +566,8 @@ def parse_args(argv=None):
     i.add_argument("--limit", type=int, help="stop after adding numbers for this many new records")
     i.add_argument("--all-numbers", action="store_true",
                    help="add every usable number whose contact name matches the owner, not just the first")
+    i.add_argument("--include-non-individual", action="store_true",
+                   help="also add business and trust owners, with a no-name greeting")
     i.set_defaults(func=cmd_import)
 
     r = sub.add_parser("run")

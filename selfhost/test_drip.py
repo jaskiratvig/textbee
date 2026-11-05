@@ -260,6 +260,18 @@ class DripTest(unittest.TestCase):
         self.assertEqual(drip.greeting_name({"Contact1Name": "Keith Baines"}, "Baines"), "")
         self.assertEqual(drip.greeting_name({"Contact1Name": "Luis Cruz", "Contact2Name": "Patricia Cruz"}, "Patricia"), "Patricia")
 
+    def test_include_non_individual(self):
+        row = self.multi_row()
+        row.update(OwnerType="LLC", FirstName="")
+        path = self.write_raw([row])
+        drip.main(self.base + ["import", "--csv", str(path)])
+        self.assertIsNone(self.contact("+13125550100"))
+        drip.main(self.base + ["import", "--csv", str(path), "--include-non-individual", "--all-numbers"])
+        self.assertEqual(self.contact("+13125550100")["first_name"], "")
+        self.assertIsNone(self.contact("+13125550102"))  # flagged DNC
+        self.run_live()
+        self.assertTrue(self.gw.posts[0]["messages"][0]["message"].startswith("Hi, this is Jas"))
+
     def test_limits(self):
         self.add([[f"31255501{i:02d}", "A", "1 St"] for i in range(40)])
         self.run_live("--daily-limit", "25", "--new-per-day", "5")
