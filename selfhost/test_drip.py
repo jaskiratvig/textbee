@@ -270,6 +270,42 @@ class DripTest(unittest.TestCase):
         self.run_live()
         self.assertTrue(self.gw.posts[0]["messages"][0]["message"].startswith("Hi, this is Jas"))
 
+    def test_sync_never_sends(self):
+        self.add([["3125550100", "A", "1 St"]])
+        self.gw.replies = [{"_id": "1", "sender": "+13125550100", "message": "STOP"}]
+        drip.main(self.base + ["sync", "--api-url", self.gw.url, "--device-id", "d"])
+        self.assertEqual(self.gw.posts, [])
+        self.assertEqual(self.contact("+13125550100")["status"], "opted_out")
+
+    def test_pause_blocks_sending_but_syncs(self):
+        self.base += ["--pause-file", str(self.tmp / "PAUSED")]
+        self.add([["3125550100", "A", "1 St"], ["3125550101", "B", "2 St"]])
+        drip.main(self.base + ["pause"])
+        self.gw.replies = [{"_id": "1", "sender": "+13125550100", "message": "STOP"}]
+        self.run_live()
+        self.assertEqual(self.gw.posts, [])
+        self.assertEqual(self.contact("+13125550100")["status"], "opted_out")
+        drip.main(self.base + ["resume"])
+        self.run_live()
+        self.assertEqual(self.recipients(), ["+13125550101"])
+
+    def test_scrub_suppresses_flagged(self):
+        self.add([["3125550100", "A", "1 St"], ["3125550101", "B", "2 St"]])
+        row = self.multi_row()
+        row["Contact1Phone_1"] = "3125550100"
+        row["Contact1Phone_1_DNC"] = "True"
+        drip.main(self.base + ["scrub", "--csv", str(self.write_raw([row]))])
+        self.assertEqual(self.contact("+13125550100")["status"], "suppressed")
+        self.assertEqual(self.contact("+13125550101")["status"], "active")
+        self.run_live()
+        self.assertEqual(self.recipients(), ["+13125550101"])
+
+    def test_scrub_refuses_file_without_dnc_columns(self):
+        path = self.tmp / "nodnc.csv"
+        path.write_text("Contact1Phone_1,PropertyAddress\n3125550100,1 St\n")
+        with self.assertRaises(SystemExit):
+            drip.main(self.base + ["scrub", "--csv", str(path)])
+
     def test_limits(self):
         self.add([[f"31255501{i:02d}", "A", "1 St"] for i in range(40)])
         self.run_live("--daily-limit", "25", "--new-per-day", "5")

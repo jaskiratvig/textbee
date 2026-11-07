@@ -140,5 +140,5 @@ Create an Ubuntu server with at least 2 GB of memory, plus swap. Then:
 4. Rename the old machine in the Tailscale admin console. Then on the server run `sudo tailscale up --hostname=OLD-MACHINE-NAME` so the address stays the same and the phone app doesn't need a rebuild.
 5. Enable Serve on the server with `sudo tailscale serve --bg 3000` and `sudo tailscale serve --bg --set-path /api/v1 http://127.0.0.1:3001/api/v1`.
 6. On the server, run `./selfhost/migrate_import.sh ~/textbee-migration.tar.gz`, then delete the archive.
-7. Check `selfhost/drip.py status` and a phone heartbeat before adding the hourly schedule on the server.
+7. Check `selfhost/drip.py status` and a phone heartbeat. On the `cloud` branch, follow `selfhost/cloud/README.md` for the schedule instead of cron.
 

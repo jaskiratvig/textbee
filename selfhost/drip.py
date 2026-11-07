@@ -8,6 +8,10 @@ Commands:
   replies   list people who replied and need a human follow-up
   history   export every message sent and received to a CSV
   retry     put contacts marked failed back in the queue
+  sync      process replies only; never sends
+  scrub     suppress numbers a raw export flags as DNC
+  pause     stop live runs from sending (replies still sync)
+  resume    allow sending again
   test      send every message right away to a few of your own numbers
 
 Any reply stops automated texts to that number only; a property's other numbers
@@ -409,6 +413,9 @@ def cmd_run(args):
             sync_delivery(db, args, key)
         except (urllib.error.URLError, TimeoutError, ValueError) as e:
             sys.exit(f"Couldn't read replies or delivery results, so nothing was sent: {e}")
+        if args.pause_file.exists():
+            print(f"Paused by {args.pause_file}: replies synced, nothing sent")
+            return
         tripped = breaker_tripped(db)
         if tripped:
             sys.exit(f"Paused: {tripped[0]} of the last {tripped[1]} sends failed. Check the phone and carrier.")
@@ -461,6 +468,63 @@ def cmd_run(args):
         advance(db, contact, steps, today)
     db.commit()
     print(f"Queued {len(batch)}")
+
+
+def cmd_sync(args):
+    """Process replies and delivery results without sending anything."""
+    key = os.environ.get("TEXTBEE_API_KEY", "")
+    if not (key and args.device_id):
+        sys.exit("sync needs --device-id and the TEXTBEE_API_KEY environment variable")
+    db = connect(args.db)
+    absorb_suppress_file(db, args.suppress)
+    db.commit()
+    try:
+        check_phone_online(args, key)
+    except SystemExit as e:
+        print(f"Warning: {e}")
+    try:
+        print(f"Replies processed: {sync_replies(db, args, key)}")
+        sync_delivery(db, args, key)
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        sys.exit(f"Couldn't read replies: {e}")
+
+
+def cmd_scrub(args):
+    """Suppress any number in the database that a raw export flags as DNC."""
+    db = connect(args.db)
+    flagged = set()
+    with args.csv.open(newline="", encoding="utf-8-sig", errors="replace") as f:
+        reader = csv.DictReader(f)
+        if "Contact1Phone_1_DNC" not in (reader.fieldnames or []):
+            sys.exit("This file has no DNC columns. Use the original skip-trace export.")
+        for row in reader:
+            for contact in range(1, 9):
+                for i in (1, 2, 3):
+                    prefix = f"Contact{contact}Phone_{i}"
+                    phone = normalize(row.get(prefix))
+                    if phone and (row.get(f"{prefix}_DNC") or "").strip().lower() != "false":
+                        flagged.add(phone)
+    contacts = {r["phone"] for r in db.execute("SELECT phone FROM contacts")}
+    texted = {r["phone"] for r in db.execute("SELECT DISTINCT phone FROM messages WHERE direction='out'")}
+    hits = contacts & flagged
+    for phone in hits:
+        suppress(db, phone, "dnc_flag", args.suppress)
+        db.execute("""UPDATE contacts SET status='suppressed', updated_at=?
+                      WHERE phone=? AND status IN ('active', 'sending', 'failed')""", (stamp(), phone))
+    db.commit()
+    print(f"DNC-flagged numbers in the database: {len(hits)}, now suppressed")
+    print(f"Of those, already texted: {len(hits & texted)}")
+
+
+def cmd_pause(args):
+    args.pause_file.parent.mkdir(parents=True, exist_ok=True)
+    args.pause_file.write_text(stamp() + "\n")
+    print("Sending paused. Replies still sync.")
+
+
+def cmd_resume(args):
+    args.pause_file.unlink(missing_ok=True)
+    print("Sending resumed.")
 
 
 def cmd_status(args):
@@ -554,6 +618,7 @@ def parse_args(argv=None):
     p.add_argument("--db", type=Path, default=HERE / "data/drip.sqlite3")
     p.add_argument("--suppress", type=Path, default=HERE / "data/suppressed.txt")
     p.add_argument("--sent-log", type=Path, default=HERE / "data/sent.csv")
+    p.add_argument("--pause-file", type=Path, default=HERE / "data/PAUSED")
     sub = p.add_subparsers(dest="command", required=True)
 
     i = sub.add_parser("import")
@@ -588,6 +653,17 @@ def parse_args(argv=None):
     t.add_argument("--end-hour", type=int, default=20)
     t.set_defaults(func=cmd_test)
 
+    y = sub.add_parser("sync")
+    y.add_argument("--device-id")
+    y.add_argument("--api-url", default="http://127.0.0.1:3001/api/v1")
+    y.set_defaults(func=cmd_sync)
+
+    c = sub.add_parser("scrub")
+    c.add_argument("--csv", type=Path, required=True)
+    c.set_defaults(func=cmd_scrub)
+
+    sub.add_parser("pause").set_defaults(func=cmd_pause)
+    sub.add_parser("resume").set_defaults(func=cmd_resume)
     sub.add_parser("status").set_defaults(func=cmd_status)
     sub.add_parser("replies").set_defaults(func=cmd_replies)
     h = sub.add_parser("history")

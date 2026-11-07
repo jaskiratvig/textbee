@@ -1,0 +1,9 @@
+[Unit]
+Description=Textbee drip every 30 minutes during sending hours
+
+[Timer]
+OnCalendar=*-*-* 09..19:00,30:00 America/Chicago
+Persistent=false
+
+[Install]
+WantedBy=timers.target

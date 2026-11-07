@@ -1,0 +1,11 @@
+[Unit]
+Description=Textbee drip: process replies only
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+WorkingDirectory=@REPO@
+EnvironmentFile=/etc/textbee-drip.env
+ExecStart=/usr/bin/flock -w 900 @REPO@/selfhost/data/.lock /usr/bin/python3 selfhost/drip.py sync --device-id ${DEVICE_ID}
