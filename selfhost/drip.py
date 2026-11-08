@@ -132,6 +132,8 @@ def greeting_name(row, first):
 
 def render(template, first, address):
     """Fill in a message, leaving the greeting out when there's no usable name."""
+    if len(first or "") < 2:
+        first = ""
     if not first:
         template = template.replace("Hi {FirstName}, ", "Hi, ")
         if template.startswith("{FirstName}, "):

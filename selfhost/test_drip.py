@@ -250,6 +250,7 @@ class DripTest(unittest.TestCase):
         self.assertIn("71st", drip.fix_address("915 W 71St St"))
         self.assertEqual(drip.fix_address("12 S State St"), "12 S State St")
         self.assertTrue(drip.render(steps[0]["template"], "", "1 St").startswith("Hi, this is Jas"))
+        self.assertTrue(drip.render(steps[0]["template"], "D", "1 St").startswith("Hi, this is Jas"))
         self.assertTrue(drip.render(steps[1]["template"], "", "1 St").startswith("Hi, Jas again"))
         self.assertTrue(drip.render(steps[2]["template"], "", "1 St").startswith("Jas from Vig Estates"))
         self.assertTrue(drip.render(steps[3]["template"], "", "1 St").startswith("Jas from Vig Estates"))
