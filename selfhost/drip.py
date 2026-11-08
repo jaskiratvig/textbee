@@ -8,6 +8,8 @@ Commands:
   replies   list people who replied and need a human follow-up
   history   export every message sent and received to a CSV
   retry     put contacts marked failed back in the queue
+  requeue   resend first texts from a window with no delivery report or reply
+  dnc-check compare contacts against a raw export's DNC flags
   sync      process replies only; never sends
   scrub     suppress numbers a raw export flags as DNC
   pause     stop live runs from sending (replies still sync)
@@ -562,6 +564,62 @@ def cmd_history(args):
     print(f"Wrote {len(rows)} messages to {args.out}")
 
 
+def local_to_utc(value, zone):
+    return datetime.fromisoformat(value).replace(tzinfo=ZoneInfo(zone)).astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def cmd_requeue(args):
+    """Put first texts sent in a window back in the queue when there's no sign they arrived."""
+    db = connect(args.db)
+    since, until = local_to_utc(args.since, args.timezone), local_to_utc(args.until, args.timezone)
+    rows = db.execute(
+        """SELECT m.id, c.phone FROM messages m JOIN contacts c ON c.phone=m.phone
+           WHERE m.direction='out' AND m.step=0 AND m.created_at>=? AND m.created_at<?
+             AND m.status NOT IN ('delivered')
+             AND c.status='active' AND c.step=1
+             AND c.phone NOT IN (SELECT phone FROM suppressions)
+             AND NOT EXISTS (SELECT 1 FROM messages i WHERE i.phone=c.phone AND i.direction='in')""",
+        (since, until)).fetchall()
+    print(f"{len(rows)} first texts sent in that window have no delivery report or reply")
+    if not args.apply:
+        print("Dry run: nothing changed. Add --apply to put them back in the queue.")
+        return
+    for row in rows:
+        db.execute("UPDATE messages SET status='requeued' WHERE id=?", (row["id"],))
+        db.execute("""UPDATE contacts SET step=0, first_sent_on=NULL, next_send_on=NULL, updated_at=?
+                      WHERE phone=?""", (stamp(), row["phone"]))
+    db.commit()
+    print(f"Requeued {len(rows)}. They'll get the first text again on the next run.")
+
+
+def cmd_dnc_check(args):
+    """Compare contacts against a raw export's DNC flags, and optionally pull flagged ones."""
+    db = connect(args.db)
+    flagged, seen_columns = set(), False
+    with args.csv.open(newline="", encoding="utf-8-sig", errors="replace") as f:
+        reader = csv.DictReader(f)
+        seen_columns = any(name.endswith("_DNC") for name in (reader.fieldnames or []))
+        if not seen_columns:
+            sys.exit("This file has no DNC columns, so it can't be checked. Use the original export.")
+        for row in reader:
+            for contact in range(1, 9):
+                for i in (1, 2, 3):
+                    prefix = f"Contact{contact}Phone_{i}"
+                    phone = normalize(row.get(prefix))
+                    if phone and (row.get(f"{prefix}_DNC") or "").strip().lower() != "false":
+                        flagged.add(phone)
+    contacts = {r["phone"]: r["status"] for r in db.execute("SELECT phone, status FROM contacts")}
+    texted = {r["phone"] for r in db.execute("SELECT DISTINCT phone FROM messages WHERE direction='out'")}
+    queued = [p for p, status in contacts.items() if p in flagged and status == "active"]
+    print(f"Contacts: {len(contacts)} | flagged DNC: {sum(p in flagged for p in contacts)} | "
+          f"flagged and already texted: {len(texted & flagged)} | flagged still active: {len(queued)}")
+    if args.remove and queued:
+        for phone in queued:
+            db.execute("UPDATE contacts SET status='dnc_flagged', updated_at=? WHERE phone=?", (stamp(), phone))
+        db.commit()
+        print(f"Removed {len(queued)} flagged numbers from the queue.")
+
+
 def cmd_retry(args):
     db = connect(args.db)
     cur = db.execute("""UPDATE contacts SET status='active', updated_at=?
@@ -670,6 +728,16 @@ def parse_args(argv=None):
     h.add_argument("--out", type=Path, default=HERE / "data/history.csv")
     h.set_defaults(func=cmd_history)
     sub.add_parser("retry").set_defaults(func=cmd_retry)
+    q = sub.add_parser("requeue")
+    q.add_argument("--since", required=True, help="local time, e.g. 2026-11-05T09:00")
+    q.add_argument("--until", required=True, help="local time, e.g. 2026-11-08T13:00")
+    q.add_argument("--timezone", default="America/Chicago")
+    q.add_argument("--apply", action="store_true")
+    q.set_defaults(func=cmd_requeue)
+    d = sub.add_parser("dnc-check")
+    d.add_argument("--csv", type=Path, required=True, help="raw export with its _DNC columns")
+    d.add_argument("--remove", action="store_true", help="take flagged numbers out of the queue")
+    d.set_defaults(func=cmd_dnc_check)
     return p.parse_args(argv)
 
 

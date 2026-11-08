@@ -306,6 +306,37 @@ class DripTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             drip.main(self.base + ["scrub", "--csv", str(path)])
 
+    def test_requeue_window(self):
+        self.add([["3125550100", "A", "1 St"], ["3125550101", "B", "2 St"], ["3125550102", "C", "3 St"]])
+        self.run_live()
+        self.gw.replies = [{"_id": "1", "sender": "+13125550102", "message": "who is this"}]
+        self.set_time(2026, 11, 5, 17)
+        self.run_live()
+        db = drip.connect(self.tmp / "d.sqlite3")
+        db.execute("UPDATE messages SET status='delivered' WHERE phone='+13125550101'")
+        db.commit()
+        drip.main(self.base + ["requeue", "--since", "2026-11-05T00:00", "--until", "2026-11-06T00:00"])
+        self.assertEqual(self.contact("+13125550100")["step"], 1)
+        drip.main(self.base + ["requeue", "--since", "2026-11-05T00:00", "--until", "2026-11-06T00:00", "--apply"])
+        self.assertEqual(self.contact("+13125550100")["step"], 0)
+        self.assertEqual(self.contact("+13125550101")["step"], 1)
+        self.assertEqual(self.contact("+13125550102")["status"], "replied")
+        before = len(self.recipients())
+        self.run_live()
+        self.assertEqual(self.recipients()[before:], ["+13125550100"])
+
+    def test_dnc_check_removes_flagged(self):
+        self.add([["3125550100", "A", "1 St"], ["3125550101", "B", "2 St"]])
+        path = self.tmp / "dnc.csv"
+        path.write_text("Contact1Phone_1,Contact1Phone_1_DNC\n3125550100,True\n3125550101,False\n")
+        drip.main(self.base + ["dnc-check", "--csv", str(path), "--remove"])
+        self.assertEqual(self.contact("+13125550100")["status"], "dnc_flagged")
+        self.assertEqual(self.contact("+13125550101")["status"], "active")
+        nodnc = self.tmp / "nodnc.csv"
+        nodnc.write_text("Contact1Phone_1\n3125550100\n")
+        with self.assertRaises(SystemExit):
+            drip.main(self.base + ["dnc-check", "--csv", str(nodnc)])
+
     def test_limits(self):
         self.add([[f"31255501{i:02d}", "A", "1 St"] for i in range(40)])
         self.run_live("--daily-limit", "25", "--new-per-day", "5")
